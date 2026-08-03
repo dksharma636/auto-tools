@@ -2,7 +2,7 @@
 """
 Telegram Account + Channel Management Bot
 Production-ready single-file system using legitimate Telethon + aiogram APIs only.
-Run: python bot.py
+Run: python bots.py
 Requires: BOT_TOKEN environment variable
 """
 
@@ -24,6 +24,11 @@ from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
+
+# -------------------- NEW FOR RENDER --------------------
+import aiohttp
+from aiohttp import web
+# -------------------------------------------------------
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ParseMode
@@ -2306,9 +2311,36 @@ async def fallback_cb(cq: CallbackQuery) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Health server (for Render)
 # ---------------------------------------------------------------------------
 
+_shutdown_health = asyncio.Event()
+
+
+async def health_handler(request: web.Request) -> web.Response:
+    return web.Response(text="OK")
+
+
+async def health_server_task() -> None:
+    """Run a minimal HTTP server on the Render-defined PORT."""
+    port = int(os.environ.get("PORT", 10000))
+    app = web.Application()
+    app.router.add_get("/", health_handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    log.info("Health server listening on port %d", port)
+    try:
+        await _shutdown_health.wait()
+    finally:
+        await runner.cleanup()
+        log.info("Health server stopped")
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 async def on_shutdown(bot: Bot) -> None:
     log.info("Shutting down — disconnecting clients…")
@@ -2319,6 +2351,7 @@ async def on_shutdown(bot: Bot) -> None:
         except Exception:
             pass
     await bot.session.close()
+    _shutdown_health.set()  # also stop health server
 
 
 async def main() -> None:
@@ -2331,10 +2364,14 @@ async def main() -> None:
     log.info("Bot started as @%s (id=%s)", me.username, me.id)
     log.info("Data directory: %s", DATA_DIR)
 
-    # Restore nothing eagerly — sessions load on demand per user
+    # Start health server in background
+    health_task = asyncio.create_task(health_server_task())
+
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
+        _shutdown_health.set()
+        await health_task
         await on_shutdown(bot)
 
 
