@@ -25,10 +25,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
 
-# -------------------- NEW FOR RENDER --------------------
 import aiohttp
 from aiohttp import web
-# -------------------------------------------------------
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ParseMode
